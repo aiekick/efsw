@@ -20,42 +20,47 @@ void CALLBACK WatchCallback(DWORD dwNumberOfBytesTransfered, LPOVERLAPPED lpOver
 	WatcherWin32 * pWatch = tWatch->Watch;
 	size_t offset = 0;
 
-	do
+	if (pWatch)
 	{
-		bool skip = false;
-
-		pNotify = (PFILE_NOTIFY_INFORMATION) &pWatch->Buffer[offset];
-		offset += pNotify->NextEntryOffset;
-
-		int count = WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
-			pNotify->FileNameLength / sizeof(WCHAR),
-			szFile, MAX_PATH - 1, NULL, NULL);
-		szFile[count] = TEXT('\0');
-
-		std::string nfile( szFile );
-
-		if ( FILE_ACTION_MODIFIED == pNotify->Action )
+		do
 		{
-			FileInfo fifile( std::string( pWatch->DirName ) + nfile );
+			bool skip = false;
 
-			if ( pWatch->LastModifiedEvent.file.ModificationTime == fifile.ModificationTime && pWatch->LastModifiedEvent.file.Size == fifile.Size && pWatch->LastModifiedEvent.fileName == nfile )
+			pNotify = (PFILE_NOTIFY_INFORMATION)&pWatch->Buffer[offset];
+			if (!pNotify) return;
+
+			offset += pNotify->NextEntryOffset;
+
+			int count = WideCharToMultiByte(CP_UTF8, 0, pNotify->FileName,
+				pNotify->FileNameLength / sizeof(WCHAR),
+				szFile, MAX_PATH - 1, NULL, NULL);
+			szFile[count] = TEXT('\0');
+
+			std::string nfile(szFile);
+
+			if (FILE_ACTION_MODIFIED == pNotify->Action)
 			{
-				skip = true;
+				FileInfo fifile(std::string(pWatch->DirName) + nfile);
+
+				if (pWatch->LastModifiedEvent.file.ModificationTime == fifile.ModificationTime && pWatch->LastModifiedEvent.file.Size == fifile.Size && pWatch->LastModifiedEvent.fileName == nfile)
+				{
+					skip = true;
+				}
+
+				pWatch->LastModifiedEvent.fileName = nfile;
+				pWatch->LastModifiedEvent.file = fifile;
 			}
 
-			pWatch->LastModifiedEvent.fileName	= nfile;
-			pWatch->LastModifiedEvent.file		= fifile;
-		}
+			if (!skip)
+			{
+				pWatch->Watch->handleAction(pWatch, nfile, pNotify->Action);
+			}
+		} while (pNotify->NextEntryOffset != 0);
 
-		if ( !skip )
+		if (!pWatch->StopNow)
 		{
-			pWatch->Watch->handleAction(pWatch, nfile, pNotify->Action);
+			RefreshWatch(tWatch);
 		}
-	} while (pNotify->NextEntryOffset != 0);
-
-	if (!pWatch->StopNow)
-	{
-		RefreshWatch(tWatch);
 	}
 }
 
